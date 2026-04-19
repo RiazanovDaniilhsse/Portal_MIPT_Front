@@ -32,10 +32,10 @@ export default function Login() {
       
       if (response.token) {
         auth.setAuth(response.token, response.user || response);
-        navigate('/profile', { replace: true });
+        navigate('/home', { replace: true });
       } else if (response.id || response.email) {
         localStorage.setItem('user', JSON.stringify(response));
-        navigate('/profile', { replace: true });
+        navigate('/home', { replace: true });
       } else {
         setError('Неверный формат ответа от сервера');
       }

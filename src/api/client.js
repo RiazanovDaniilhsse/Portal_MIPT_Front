@@ -29,7 +29,7 @@ async function fetchJson(url, options = {}) {
 export const api = {
   auth: {
     login: (email, password) => 
-      fetchJson('/api/auth/login', {
+      fetchJson('/api/users/authenticate/email', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       }),
@@ -67,7 +67,11 @@ export const api = {
 
   wallets: {
     getByUserId: (userId) => fetchJson(`/api/wallets/${userId}`),
-  }
+  },
+  advertisements: {
+    getAll: () => fetchJson('/v1/advertisements'),
+    getById: (id) => fetchJson(`/v1/advertisements/${id}`),
+  },
 };
 
 export const auth = {

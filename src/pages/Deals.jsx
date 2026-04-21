@@ -25,19 +25,20 @@ export default function Deals() {
   function load() {
     if (!user?.id) return;
     setLoading(true);
-    Promise.all([
+    Promise.allSettled([
       api.advertisements.getAll({ authorId: user.id }),
       api.advertisements.getAll({ favorite: true }),
       api.wallets.getOperations(user.id),
-    ]).then(([myAds, favAds, ops]) => {
+    ]).then(([myAdsResult, favAdsResult, opsResult]) => {
+      const myAds = myAdsResult.status === 'fulfilled' ? myAdsResult.value : [];
+      const favAds = favAdsResult.status === 'fulfilled' ? favAdsResult.value : [];
+      const ops = opsResult.status === 'fulfilled' ? opsResult.value : [];
       setAds(myAds || []);
       setFavorites(favAds || []);
-      // Active reservations where I'm the client (buyer)
       const reserveOps = (ops || []).filter(o => o.type === 'RESERVE' && o.clientId === user.id);
       const settledTitles = new Set((ops || []).filter(o => (o.type === 'PAY' || o.type === 'CANCEL') && o.clientId === user.id).map(o => o.title));
       setPurchases(reserveOps.filter(o => !settledTitles.has(o.title)));
-    }).catch(() => {})
-      .finally(() => setLoading(false));
+    }).finally(() => setLoading(false));
   }
 
   useEffect(() => { load(); }, [user?.id]);

@@ -1,105 +1,143 @@
-import {useState, useEffect} from 'react';
-import {api} from '../api/client';
-import './Home.css';
-import Header from "../components/Header.jsx";
-import CreateAdModal from "../components/CreateAdModal.jsx";
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+import Header from '../components/Header';
+import AdCard from '../components/AdCard';
+import CreateAdModal from '../components/CreateAdModal';
 
 export default function Home() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [ads, setAds] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  const loadAds = async () => {
-    try {
-      setLoading(true);
-      const data = await api.advertisements.getAll();
-      setAds(data);
-    } catch (err) {
-      setError('Не удалось загрузить объявления');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [modalOpen, setModalOpen] = useState(false);
 
   useEffect(() => {
-    loadAds();
+    api.advertisements.getAll({ status: 'ACTIVE' })
+      .then(data => setAds((data || []).slice(0, 12)))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading && ads.length === 0) {
-    return <div className="loader">Загрузка объявлений...</div>;
-  }
-  if (error) {
-    return <div className="error-msg">{error}</div>;
-  }
-
   return (
-      <div className="page-wrapper">
-        <Header/>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Header />
+      <main style={{ flex: 1, padding: 'var(--pad)', maxWidth: 1100, width: '100%', margin: '0 auto' }}>
 
-        <div className="home-layout">
-          <aside className="sidebar">
-            <h3>Категории</h3>
-            <ul className="category-list">
-              <li className="active">Все категории</li>
-              <li>Услуги</li>
-              <li>Вещи</li>
-              <li>Учеба</li>
-              <li>Недвижимость</li>
-            </ul>
-          </aside>
-
-          <main className="feed">
-            <div className="feed-header">
-              <h2>Свежие объявления</h2>
-              <div className="search-bar">
-                <input type="text" placeholder="Поиск по названию..."/>
-              </div>
-              <button
-                  className="create-btn"
-                  onClick={() => setIsModalOpen(true)}
-              >
-                + Создать
-              </button>
+        {/* Welcome banner */}
+        <div style={{
+          background: 'var(--accent)',
+          borderRadius: 'var(--radius)',
+          padding: '28px 32px',
+          marginBottom: 28,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 20,
+        }}>
+          <div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#fff', marginBottom: 6 }}>
+              Добро пожаловать, {user?.login || 'студент'}!
             </div>
-
-            <div className="ads-grid">
-              {ads.length > 0 ? (
-                  ads.map(ad => (
-                      <div key={ad.id} className="ad-card">
-                        <div className="ad-image">
-                          {ad.photoUrls?.length > 0 ? (
-                              <img src={ad.photoUrls[0]} alt={ad.name}/>
-                          ) : (
-                              <div className="no-photo">Нет фото</div>
-                          )}
-                          <span className={`ad-category ${ad.type?.toLowerCase()
-                          || ''}`}>
-                            {ad.categoryDisplayName || ad.category}
-                          </span>
-                        </div>
-                        <div className="ad-content">
-                          <h3>{ad.name}</h3>
-                          <p className="ad-price">{ad.price ? `${ad.price} ₽`
-                              : 'Бесплатно'}</p>
-                          <p className="ad-description">{ad.description?.substring(
-                              0, 60)}...</p>
-                          <button className="details-btn">Подробнее</button>
-                        </div>
-                      </div>
-                  ))
-              ) : (
-                  <p>Объявлений пока нет. Будьте первым!</p>
-              )}
+            <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+              Marketplace для студентов и сотрудников МФТИ
             </div>
-          </main>
+          </div>
+          <button
+            onClick={() => setModalOpen(true)}
+            style={{
+              padding: '10px 20px',
+              fontSize: 13,
+              fontWeight: 600,
+              background: '#fff',
+              color: 'var(--accent)',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            + Разместить
+          </button>
         </div>
-        <CreateAdModal
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
-            onSuccess={loadAds}
-        />
-      </div>
+
+        {/* Quick actions */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 28 }}>
+          {[
+            { label: 'Все объявления', action: () => navigate('/catalog') },
+            { label: 'Товары', action: () => navigate('/catalog?type=OBJECTS') },
+            { label: 'Услуги', action: () => navigate('/catalog?type=SERVICES') },
+            { label: 'Мои сделки', action: () => navigate('/deals') },
+          ].map(({ label, action }) => (
+            <button
+              key={label}
+              onClick={action}
+              style={{
+                padding: '6px 14px',
+                fontSize: 12.5,
+                fontWeight: 500,
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                color: 'var(--text)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text)'; }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Recent ads */}
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>Свежие объявления</span>
+          <button
+            onClick={() => navigate('/catalog')}
+            style={{ fontSize: 12.5, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+          >
+            Все →
+          </button>
+        </div>
+
+        {loading ? (
+          <div style={{ color: 'var(--muted)', fontSize: 13, padding: '40px 0', textAlign: 'center' }}>
+            Загрузка...
+          </div>
+        ) : ads.length === 0 ? (
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: '48px 0',
+            textAlign: 'center',
+            color: 'var(--muted)',
+            fontSize: 13,
+          }}>
+            Объявлений пока нет.{' '}
+            <button onClick={() => setModalOpen(true)} style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              Разместите первое!
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: 16,
+          }}>
+            {ads.map(ad => (
+              <AdCard key={ad.id} ad={ad} onFavoriteToggle={updated => setAds(prev => prev.map(a => a.id === updated.id ? updated : a))} />
+            ))}
+          </div>
+        )}
+      </main>
+
+      <CreateAdModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSuccess={() => {
+        api.advertisements.getAll({ status: 'ACTIVE' }).then(data => setAds((data || []).slice(0, 12))).catch(() => {});
+      }} />
+    </div>
   );
 }

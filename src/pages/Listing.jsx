@@ -15,7 +15,7 @@ export default function Listing() {
   const [seller, setSeller] = useState(null);
   const [loading, setLoading] = useState(true);
   const [photoIdx, setPhotoIdx] = useState(0);
-  const [chatLoading, setChatLoading] = useState(false);
+  const [chatLoading] = useState(false);
   const [wallet, setWallet] = useState(null);
   const [reserved, setReserved] = useState(false);
   const [buyLoading, setBuyLoading] = useState('');
@@ -48,18 +48,10 @@ export default function Listing() {
     }).catch(() => {});
   }, [user?.id, ad?.id]);
 
-  async function handleContact() {
+  function handleContact() {
     if (!user?.id || !ad?.authorId) return;
     if (user.id === ad.authorId) return;
-    setChatLoading(true);
-    try {
-      await api.chats.create(user.id, ad.authorId);
-      navigate('/messages');
-    } catch {
-      navigate('/messages');
-    } finally {
-      setChatLoading(false);
-    }
+    navigate('/messages', { state: { pendingMemberId: ad.authorId } });
   }
 
   async function handleReserve() {

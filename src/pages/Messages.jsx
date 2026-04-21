@@ -1,25 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 
 export default function Messages() {
   const { user } = useAuth();
+  const location = useLocation();
   const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [chatPartners, setChatPartners] = useState({});
+  const [pendingPartner, setPendingPartner] = useState(null);
   const messagesEndRef = useRef(null);
+
+  // pendingMemberId comes from Listing.jsx via navigate state — frozen on mount
+  const [pendingMemberId] = useState(() => location.state?.pendingMemberId || null);
 
   useEffect(() => {
     if (!user?.id) return;
     api.chats.getAll(user.id)
       .then(async data => {
-        setChats(data || []);
+        const loadedChats = data || [];
+        setChats(loadedChats);
+
         const partners = {};
-        for (const chat of data || []) {
+        for (const chat of loadedChats) {
           const partnerId = chat.ownerId === user.id ? chat.memberId : chat.ownerId;
           try {
             const u = await api.users.getById(partnerId);
@@ -27,12 +35,34 @@ export default function Messages() {
           } catch {}
         }
         setChatPartners(partners);
+
+        if (pendingMemberId) {
+          // Check if chat with this user already exists
+          const existing = loadedChats.find(c =>
+            (c.ownerId === user.id && c.memberId === pendingMemberId) ||
+            (c.ownerId === pendingMemberId && c.memberId === user.id)
+          );
+          if (existing) {
+            setSelectedChat(existing);
+          } else {
+            // Show virtual (unsaved) chat — will be created on first message
+            setSelectedChat({ id: null, ownerId: user.id, memberId: pendingMemberId });
+            try {
+              const partner = await api.users.getById(pendingMemberId);
+              setPendingPartner(partner);
+            } catch {}
+          }
+        }
       })
       .catch(() => {});
   }, [user?.id]);
 
+  // Load messages — skip if virtual chat (id === null)
   useEffect(() => {
-    if (!selectedChat) return;
+    if (!selectedChat?.id) {
+      setMessages([]);
+      return;
+    }
     api.chats.getMessages(selectedChat.id).then(setMessages).catch(() => {});
     const interval = setInterval(() => {
       api.chats.getMessages(selectedChat.id).then(setMessages).catch(() => {});
@@ -49,22 +79,43 @@ export default function Messages() {
     if (!text.trim() || !selectedChat || !user?.id) return;
     setSending(true);
     try {
-      const msg = await api.chats.sendMessage(selectedChat.id, user.id, text.trim());
+      let chatId = selectedChat.id;
+
+      // Virtual chat — create it now on first message
+      if (!chatId) {
+        const newChat = await api.chats.create(user.id, selectedChat.memberId);
+        chatId = newChat.id;
+        setChats(prev => [newChat, ...prev]);
+        setChatPartners(prev => ({ ...prev, [newChat.id]: pendingPartner }));
+        setSelectedChat(newChat);
+        setPendingPartner(null);
+      }
+
+      const msg = await api.chats.sendMessage(chatId, user.id, text.trim());
       setMessages(prev => [...prev, msg]);
       setText('');
     } catch {}
     setSending(false);
   }
 
+  const partnerOf = (chat) => {
+    if (!chat?.id) return pendingPartner;
+    return chatPartners[chat.id];
+  };
+
   const partnerName = (chat) => {
-    const partner = chatPartners[chat.id];
-    return partner?.login || partner?.email || 'Пользователь';
+    const p = partnerOf(chat);
+    return p?.login || p?.email || 'Пользователь';
   };
 
   const partnerInitials = (chat) => {
-    const name = partnerName(chat);
-    return name.slice(0, 2).toUpperCase();
+    return partnerName(chat).slice(0, 2).toUpperCase();
   };
+
+  // Include virtual chat in sidebar list so it's visually selectable
+  const visibleChats = selectedChat && !selectedChat.id
+    ? [selectedChat, ...chats]
+    : chats;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -84,14 +135,14 @@ export default function Messages() {
           <div style={{ padding: '14px 16px', fontSize: 13, fontWeight: 700, borderBottom: '1px solid var(--border)' }}>
             Сообщения
           </div>
-          {chats.length === 0 ? (
+          {visibleChats.length === 0 ? (
             <div style={{ padding: 20, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
               Нет диалогов.<br />Найдите объявление и напишите продавцу.
             </div>
           ) : (
-            chats.map(chat => (
+            visibleChats.map((chat, idx) => (
               <div
-                key={chat.id}
+                key={chat.id ?? '__pending__'}
                 onClick={() => setSelectedChat(chat)}
                 style={{
                   padding: '12px 16px',
@@ -99,11 +150,11 @@ export default function Messages() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
-                  background: selectedChat?.id === chat.id ? 'var(--accent-soft)' : 'none',
-                  borderLeft: selectedChat?.id === chat.id ? '3px solid var(--accent)' : '3px solid transparent',
+                  background: selectedChat === chat ? 'var(--accent-soft)' : 'none',
+                  borderLeft: selectedChat === chat ? '3px solid var(--accent)' : '3px solid transparent',
                 }}
-                onMouseEnter={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = 'var(--bg)'; }}
-                onMouseLeave={e => { if (selectedChat?.id !== chat.id) e.currentTarget.style.background = 'none'; }}
+                onMouseEnter={e => { if (selectedChat !== chat) e.currentTarget.style.background = 'var(--bg)'; }}
+                onMouseLeave={e => { if (selectedChat !== chat) e.currentTarget.style.background = 'none'; }}
               >
                 <div style={{
                   width: 36,
@@ -125,7 +176,7 @@ export default function Messages() {
                     {partnerName(chat)}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {new Date(chat.lastUpdate).toLocaleDateString('ru')}
+                    {chat.id ? new Date(chat.lastUpdate).toLocaleDateString('ru') : 'Новый диалог'}
                   </div>
                 </div>
               </div>

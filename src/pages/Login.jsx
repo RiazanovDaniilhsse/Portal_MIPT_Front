@@ -1,107 +1,119 @@
 import { useState } from 'react';
-import { api, auth } from '../api/client';
 import { useNavigate, Link } from 'react-router-dom';
-import './Login.css';
+import { api } from '../api/client';
+import { useAuth } from '../context/AuthContext';
+
+const inputStyle = {
+  width: '100%',
+  padding: '10px 12px',
+  fontSize: 14,
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  background: 'var(--surface)',
+  color: 'var(--text)',
+  outline: 'none',
+};
 
 export default function Login() {
-  const [form, setForm] = useState({ email: '', password: '' });
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [notActivated, setNotActivated] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    setError('');
-  };
-
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    setNotActivated(false);
 
-    if (!form.email.trim() || !form.password) {
-      return setError('Заполните все поля');
-    }
-
-    if (!form.email.trim().endsWith('@phystech.edu')) {
-      return setError('Вход доступен только для @phystech.edu');
-    }
-
+    const normalizedEmail = email.toLowerCase().trim();
     setLoading(true);
     try {
-      const response = await api.auth.login(form.email, form.password);
-      
-      if (response.token) {
-        auth.setAuth(response.token, response.user || response);
-        navigate('/home', { replace: true });
-      } else if (response.id || response.email) {
-        localStorage.setItem('user', JSON.stringify(response));
-        navigate('/home', { replace: true });
-      } else {
-        setError('Неверный формат ответа от сервера');
-      }
-      
+      const data = await api.auth.login(normalizedEmail, password);
+      const userInfo = await api.users.getByEmail(normalizedEmail);
+      const normalized = { ...userInfo, id: userInfo.userID, email: normalizedEmail };
+      login(data.token || 'fake-jwt-token-for-now', normalized);
+      navigate('/');
     } catch (err) {
-      console.error('Login error:', err);
-      
-      if (err.status === 401) {
-        setError('Неверный email или пароль');
-      } else if (err.status === 404) {
-        setError('Пользователь не найден');
-      } else if (err.status === 400) {
-        setError('Некорректные данные');
-      } else if (err.message?.includes('Failed to fetch')) {
-        setError('Нет соединения с сервером');
+      if (err.message?.includes('не активирован')) {
+        setNotActivated(true);
+        setError(err.message);
       } else {
-        setError('Ошибка при входе. Попробуйте позже.');
+        setError(err.message || 'Неверный email или пароль');
       }
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="auth-container">
-      <h2>Вход</h2>
-      <p className="hint">Только для @phystech.edu</p>
-      
-      <form onSubmit={handleSubmit} className="auth-form">
-        {error && <div className="error">{error}</div>}
-        
-        <input
-          type="email"
-          name="email"
-          placeholder="Email"
-          value={form.email}
-          onChange={handleChange}
-          required
-          pattern=".*@phystech\.edu$"
-          disabled={loading}
-          autoComplete="email"
-        />
-        
-        <input
-          type="password"
-          name="password"
-          placeholder="Пароль"
-          value={form.password}
-          onChange={handleChange}
-          required
-          disabled={loading}
-          autoComplete="current-password"
-        />
-        
-        <button type="submit" disabled={loading}>
-          {loading ? 'Вход...' : 'Войти'}
-        </button>
-      </form>
-      
-      <div className="auth-links">
-        <p>
-          Нет аккаунта? <Link to="/register">Зарегистрироваться</Link>
-        </p>
-        <p>
-          <Link to="/forgot-password">Забыли пароль?</Link>
-        </p>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ width: 48, height: 48, background: 'var(--accent)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 700, color: '#fff', margin: '0 auto 16px' }}>P</div>
+          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>Portal МФТИ</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)' }}>Войдите в аккаунт</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 28 }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {error && (
+              <div style={{ background: 'oklch(0.95 0.04 25)', border: '1px solid oklch(0.8 0.1 25)', borderRadius: 'var(--radius-sm)', padding: '9px 12px', fontSize: 13, color: 'var(--negative)' }}>
+                {error}
+                {notActivated && (
+                  <div style={{ marginTop: 6 }}>
+                    <Link to={`/activation-pending?email=${encodeURIComponent(email)}`} style={{ color: 'var(--accent)', fontWeight: 600, fontSize: 12 }}>
+                      Информация об активации →
+                    </Link>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, display: 'block' }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="user@example.com"
+                required
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, display: 'block' }}>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{ width: '100%', padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderRadius: 'var(--radius-sm)', background: loading ? 'var(--border)' : 'var(--accent)', color: loading ? 'var(--muted)' : '#fff', cursor: loading ? 'not-allowed' : 'pointer', marginTop: 4 }}
+            >
+              {loading ? 'Вход...' : 'Войти'}
+            </button>
+          </form>
+        </div>
+
+        <div style={{ textAlign: 'center', marginTop: 16, fontSize: 13, color: 'var(--muted)' }}>
+          Нет аккаунта?{' '}
+          <Link to="/register" style={{ color: 'var(--accent)', fontWeight: 600 }}>Зарегистрироваться</Link>
+        </div>
       </div>
     </div>
   );

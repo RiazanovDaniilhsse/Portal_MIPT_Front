@@ -38,7 +38,7 @@ export default function ReviewList({ sellerId, adId }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
             <Stars rating={r.rating} />
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              {r.isAnonymous ? 'Анонимно' : r.buyerLogin || 'Пользователь'}
+              {r.isAnonymous ? 'Анонимно' : r.buyerName || 'Пользователь'}
             </span>
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>
               {new Date(r.createdAt).toLocaleDateString('ru')}

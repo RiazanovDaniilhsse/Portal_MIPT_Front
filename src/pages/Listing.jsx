@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import ReviewList from '../components/ReviewList';
+import ReviewModal from '../components/ReviewModal';
 
 const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"%3E%3Crect width="600" height="400" fill="%23f3f3f3"/%3E%3Ctext x="300" y="210" font-family="sans-serif" font-size="18" fill="%23aaa" text-anchor="middle"%3EФото%3C/text%3E%3C/svg%3E';
 
@@ -21,6 +22,10 @@ export default function Listing() {
   const [buyLoading, setBuyLoading] = useState('');
   const [buyError, setBuyError] = useState('');
   const [showBuyModal, setShowBuyModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewLoading, setReviewLoading] = useState('');
+  const [reviewError, setReviewError] = useState('');
+  const [reviewKey, setReviewKey] = useState(0);
 
   const opTitle = (adObj) => `[${adObj?.id}] ${adObj?.name}`;
 
@@ -64,14 +69,40 @@ export default function Listing() {
     setBuyLoading('');
   }
 
-  async function handlePay() {
-    setBuyLoading('pay'); setBuyError('');
+  async function handlePayOnly() {
+    setReviewLoading('skip'); setReviewError('');
     try {
       await api.wallets.pay(user.id, ad.authorId, ad.price, opTitle(ad));
       const w = await api.wallets.get(user.id);
-      setWallet(w); setReserved(false);
-    } catch (e) { setBuyError(e.message || 'Ошибка подтверждения'); }
-    setBuyLoading('');
+      setWallet(w); setReserved(false); setShowReviewModal(false);
+    } catch (e) { setReviewError(e.message || 'Ошибка подтверждения'); }
+    setReviewLoading('');
+  }
+
+  async function handlePayWithReview(reviewData) {
+    setReviewLoading('submit'); setReviewError('');
+    try {
+      await api.wallets.pay(user.id, ad.authorId, ad.price, opTitle(ad));
+      const w = await api.wallets.get(user.id);
+      setWallet(w); setReserved(false); setShowReviewModal(false);
+    } catch (e) {
+      setReviewError(e.message || 'Ошибка подтверждения');
+      setReviewLoading('');
+      return;
+    }
+    try {
+      await api.reviews.create({
+        sellerId: ad.authorId,
+        advertisementId: ad.id,
+        rating: reviewData.rating,
+        comment: reviewData.comment,
+        isAnonymous: reviewData.isAnonymous,
+      }, user.id);
+      setReviewKey(k => k + 1);
+    } catch (e) {
+      // payment already succeeded — review failure is non-blocking
+    }
+    setReviewLoading('');
   }
 
   async function handleCancel() {
@@ -181,7 +212,7 @@ export default function Listing() {
             {/* Reviews */}
             <div style={{ marginTop: 28 }}>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Отзывы</div>
-              <ReviewList adId={ad.id} />
+              <ReviewList key={reviewKey} adId={ad.id} />
             </div>
           </div>
 
@@ -274,11 +305,11 @@ export default function Listing() {
                         Зарезервировано: {ad.price?.toLocaleString('ru')} t
                       </div>
                       <button
-                        onClick={handlePay}
+                        onClick={() => { setReviewError(''); setShowReviewModal(true); }}
                         disabled={!!buyLoading}
                         style={{ width: '100%', padding: '9px 0', fontSize: 13, fontWeight: 600, background: 'var(--positive)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: buyLoading ? 'not-allowed' : 'pointer' }}
                       >
-                        {buyLoading === 'pay' ? '...' : 'Получил — подтвердить оплату'}
+                        Получил — подтвердить оплату
                       </button>
                       <button
                         onClick={handleCancel}
@@ -327,6 +358,16 @@ export default function Listing() {
           </div>
         </div>
       </main>
+
+      <ReviewModal
+        isOpen={showReviewModal}
+        onClose={() => setShowReviewModal(false)}
+        onSkip={handlePayOnly}
+        onSubmit={handlePayWithReview}
+        adTitle={ad?.name}
+        loading={reviewLoading}
+        error={reviewError}
+      />
 
       {showBuyModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => setShowBuyModal(false)}>

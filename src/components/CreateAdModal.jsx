@@ -115,7 +115,7 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
       await api.advertisements.create({
         name: form.name,
         description: form.description,
-        price: form.price ? Number(form.price) : null,
+        price: form.price && Number(form.price) > 0 ? Number(form.price) : null,
         type: form.type,
         category: form.category,
         authorId: user?.id,

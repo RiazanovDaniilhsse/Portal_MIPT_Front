@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
 import CreateAdModal from '../components/CreateAdModal';
 import EditAdModal from '../components/EditAdModal';
+import ReviewModal from '../components/ReviewModal';
 
 const STATUS_LABELS = { ACTIVE: 'Активно', PAUSED: 'Приостановлено', DRAFT: 'Черновик', ARCHIVED: 'В архиве' };
 const STATUS_COLORS = { ACTIVE: 'var(--positive)', PAUSED: 'var(--muted)', DRAFT: 'var(--accent)', ARCHIVED: 'var(--muted)' };
@@ -21,6 +22,9 @@ export default function Deals() {
   const [actionLoading, setActionLoading] = useState({});
   const [actionError, setActionError] = useState({});
   const [editingAd, setEditingAd] = useState(null);
+  const [reviewOp, setReviewOp] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState('');
+  const [reviewError, setReviewError] = useState('');
 
   function load() {
     if (!user?.id) return;
@@ -58,6 +62,42 @@ export default function Deals() {
       setActionError(p => ({ ...p, [ad.id]: err.message || 'Ошибка' }));
     }
     setActionLoading(p => ({ ...p, [ad.id]: false }));
+  }
+
+  async function handlePayOnly(op) {
+    setReviewLoading('skip'); setReviewError('');
+    try {
+      await api.wallets.pay(op.clientId, op.performerId, op.amount, op.title);
+      setReviewOp(null);
+      load();
+    } catch (e) { setReviewError(e.message || 'Ошибка подтверждения'); }
+    setReviewLoading('');
+  }
+
+  async function handlePayWithReview(op, reviewData) {
+    setReviewLoading('submit'); setReviewError('');
+    try {
+      await api.wallets.pay(op.clientId, op.performerId, op.amount, op.title);
+      setReviewOp(null);
+      load();
+    } catch (e) {
+      setReviewError(e.message || 'Ошибка подтверждения');
+      setReviewLoading('');
+      return;
+    }
+    try {
+      const adId = op.title?.match(/^\[([^\]]+)\]/)?.[1];
+      await api.reviews.create({
+        sellerId: op.performerId,
+        advertisementId: adId || null,
+        rating: reviewData.rating,
+        comment: reviewData.comment,
+        isAnonymous: reviewData.isAnonymous,
+      }, op.clientId);
+    } catch (e) {
+      // payment already succeeded — review failure is non-blocking
+    }
+    setReviewLoading('');
   }
 
   const displayed = tab === 'my' ? ads : tab === 'purchases' ? null : favorites;
@@ -132,16 +172,11 @@ export default function Deals() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                       <button
-                        onClick={async () => {
-                          setActionLoading(p => ({ ...p, [op.id]: 'pay' }));
-                          try { await api.wallets.pay(op.clientId, op.performerId, op.amount, op.title); load(); }
-                          catch (e) { setActionError(p => ({ ...p, [op.id]: e.message })); }
-                          setActionLoading(p => ({ ...p, [op.id]: '' }));
-                        }}
+                        onClick={() => { setReviewError(''); setReviewOp(op); }}
                         disabled={!!actionLoading[op.id]}
                         style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, background: 'var(--positive)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
                       >
-                        {actionLoading[op.id] === 'pay' ? '...' : 'Получил ✓'}
+                        Получил ✓
                       </button>
                       <button
                         onClick={async () => {
@@ -254,6 +289,16 @@ export default function Deals() {
           </div>
         )}
       </main>
+
+      <ReviewModal
+        isOpen={!!reviewOp}
+        onClose={() => setReviewOp(null)}
+        onSkip={() => handlePayOnly(reviewOp)}
+        onSubmit={(reviewData) => handlePayWithReview(reviewOp, reviewData)}
+        adTitle={reviewOp?.title?.replace(/^\[[^\]]+\]\s*/, '') || reviewOp?.title}
+        loading={reviewLoading}
+        error={reviewError}
+      />
 
       <CreateAdModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSuccess={load} />
       {editingAd && (

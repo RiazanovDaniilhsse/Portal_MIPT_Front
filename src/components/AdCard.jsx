@@ -80,9 +80,18 @@ export default function AdCard({ ad, onFavoriteToggle }) {
           {ad.name}
         </div>
         <div style={{ marginTop: 'auto', paddingTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-            {ad.price != null ? `${ad.price.toLocaleString('ru')} t` : 'Бесплатно'}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {ad.isAuction && (
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'oklch(0.5 0.15 60)', background: 'oklch(0.95 0.06 60)', padding: '1px 5px', borderRadius: 3, whiteSpace: 'nowrap' }}>
+                Аукцион
+              </span>
+            )}
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+              {ad.isAuction
+                ? (ad.price != null ? `от ${ad.price.toLocaleString('ru')} t` : 'Аукцион')
+                : (ad.price != null ? `${ad.price.toLocaleString('ru')} t` : 'Бесплатно')}
+            </span>
+          </div>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {new Date(ad.createdAt).toLocaleDateString('ru')}
           </span>

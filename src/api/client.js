@@ -115,6 +115,19 @@ export const api = {
       fetchJson('/api/wallets/operations/refund', { method: 'POST', body: JSON.stringify({ clientId, performerId, amount, title }) }),
   },
 
+  auctions: {
+    getBids: (adId) => fetchJson(`/api/v1/advertisements/${adId}/auction/bids`),
+    placeBid: (adId, bidderId, amount) =>
+      fetchJson(`/api/v1/advertisements/${adId}/auction/bids`, {
+        method: 'POST',
+        body: JSON.stringify({ bidderId, amount }),
+      }),
+    close: (adId, requesterId) =>
+      fetchJson(`/api/v1/advertisements/${adId}/auction/close?requesterId=${requesterId}`, {
+        method: 'POST',
+      }),
+  },
+
   chats: {
     getAll: (userId) => fetchJson(`/api/chats?userId=${userId}`),
     create: (ownerId, memberId) =>

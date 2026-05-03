@@ -20,11 +20,20 @@ const labelStyle = {
   display: 'block',
 };
 
+function toLocalDatetime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function EditAdModal({ ad, onClose, onSuccess }) {
   const [form, setForm] = useState({
     name: ad?.name || '',
     description: ad?.description || '',
-    price: ad?.price != null ? String(ad.price) : '',
+    price: ad?.price != null && !ad?.isAuction ? String(ad.price) : '',
+    startingBid: ad?.isAuction && ad?.price != null ? String(ad.price) : '',
+    auctionEndsAt: ad?.isAuction ? toLocalDatetime(ad?.auctionEndsAt) : '',
   });
   const [photoUrls, setPhotoUrls] = useState(ad?.photoUrls || []);
   const [photoInput, setPhotoInput] = useState('');
@@ -33,7 +42,13 @@ export default function EditAdModal({ ad, onClose, onSuccess }) {
 
   useEffect(() => {
     if (ad) {
-      setForm({ name: ad.name || '', description: ad.description || '', price: ad.price != null ? String(ad.price) : '' });
+      setForm({
+        name: ad.name || '',
+        description: ad.description || '',
+        price: ad.price != null && !ad.isAuction ? String(ad.price) : '',
+        startingBid: ad.isAuction && ad.price != null ? String(ad.price) : '',
+        auctionEndsAt: ad.isAuction ? toLocalDatetime(ad.auctionEndsAt) : '',
+      });
       setPhotoUrls(ad.photoUrls || []);
     }
   }, [ad?.id]);
@@ -58,12 +73,22 @@ export default function EditAdModal({ ad, onClose, onSuccess }) {
     setLoading(true);
     setError('');
     try {
-      const updated = await api.advertisements.update(ad.id, {
+      const payload = {
         name: form.name,
         description: form.description,
-        price: form.price ? Number(form.price) : null,
-        photoUrls: new Set ? [...new Set(photoUrls)] : photoUrls,
-      });
+        photoUrls: [...new Set(photoUrls)],
+      };
+
+      if (ad.isAuction) {
+        payload.price = form.startingBid ? Number(form.startingBid) : null;
+        payload.auctionEndsAt = form.auctionEndsAt
+          ? new Date(form.auctionEndsAt).toISOString()
+          : null;
+      } else {
+        payload.price = form.price ? Number(form.price) : null;
+      }
+
+      const updated = await api.advertisements.update(ad.id, payload);
       onSuccess?.(updated);
       onClose();
     } catch (err) {
@@ -83,7 +108,9 @@ export default function EditAdModal({ ad, onClose, onSuccess }) {
         onClick={e => e.stopPropagation()}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>Редактировать объявление</span>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>
+            Редактировать {ad.isAuction ? 'аукцион' : 'объявление'}
+          </span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted)', cursor: 'pointer' }}>×</button>
         </div>
 
@@ -101,12 +128,31 @@ export default function EditAdModal({ ad, onClose, onSuccess }) {
               onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')} />
           </div>
 
-          <div>
-            <label style={labelStyle}>Цена (в токенах)</label>
-            <input type="number" name="price" value={form.price} onChange={handleChange} min="0" placeholder="Оставьте пустым для бесплатно" style={inputStyle}
-              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')} />
-          </div>
+          {ad.isAuction ? (
+            <>
+              <div>
+                <label style={labelStyle}>Начальная ставка (токены)</label>
+                <input type="number" name="startingBid" value={form.startingBid} onChange={handleChange} min="1" placeholder="Минимальная ставка" style={inputStyle}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')} />
+              </div>
+              <div>
+                <label style={labelStyle}>Конец аукциона</label>
+                <input type="datetime-local" name="auctionEndsAt" value={form.auctionEndsAt} onChange={handleChange}
+                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                  style={inputStyle}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')} />
+              </div>
+            </>
+          ) : (
+            <div>
+              <label style={labelStyle}>Цена (в токенах)</label>
+              <input type="number" name="price" value={form.price} onChange={handleChange} min="0" placeholder="Оставьте пустым для бесплатно" style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')} />
+            </div>
+          )}
 
           <div>
             <label style={labelStyle}>Описание</label>

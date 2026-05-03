@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -7,6 +7,20 @@ import ReviewList from '../components/ReviewList';
 import ReviewModal from '../components/ReviewModal';
 
 const placeholder = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400"%3E%3Crect width="600" height="400" fill="%23f3f3f3"/%3E%3Ctext x="300" y="210" font-family="sans-serif" font-size="18" fill="%23aaa" text-anchor="middle"%3EФото%3C/text%3E%3C/svg%3E';
+
+function formatCountdown(ms) {
+  if (ms <= 0) return null;
+  const d = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  const parts = [];
+  if (d > 0) parts.push(`${d}д`);
+  if (h > 0) parts.push(`${h}ч`);
+  if (m > 0 || d > 0) parts.push(`${m}м`);
+  parts.push(`${s}с`);
+  return parts.join(' ');
+}
 
 export default function Listing() {
   const { id } = useParams();
@@ -27,8 +41,26 @@ export default function Listing() {
   const [reviewError, setReviewError] = useState('');
   const [reviewKey, setReviewKey] = useState(0);
 
+  // Auction state
+  const [bids, setBids] = useState([]);
+  const [bidInput, setBidInput] = useState('');
+  const [bidLoading, setBidLoading] = useState(false);
+  const [bidError, setBidError] = useState('');
+  const [closeAuctionLoading, setCloseAuctionLoading] = useState(false);
+  const [countdown, setCountdown] = useState('');
+  const [remainingMs, setRemainingMs] = useState(null);
+  const [auctionEnded, setAuctionEnded] = useState(false);
+  const timerRef = useRef(null);
+
   const opTitle = (adObj) => `[${adObj?.id}] ${adObj?.name}`;
 
+  const topBid = bids[0] ?? null;
+  const isAuctionWinner = ad?.isAuction && topBid?.bidderId === user?.id;
+  const effectivePayAmount = ad?.isAuction
+    ? (topBid?.amount ?? ad?.price)
+    : ad?.price;
+
+  // Fetch ad
   useEffect(() => {
     api.advertisements.getById(id)
       .then(data => {
@@ -41,17 +73,60 @@ export default function Listing() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // Fetch wallet & reservation status
   useEffect(() => {
     if (!user?.id || !ad) return;
     api.wallets.get(user.id).then(setWallet).catch(() => {});
-    api.wallets.getOperations(user.id).then(ops => {
+    refreshReservationStatus();
+  }, [user?.id, ad?.id]);
+
+  // Fetch bids for auctions
+  useEffect(() => {
+    if (!ad?.isAuction) return;
+    api.auctions.getBids(ad.id).then(setBids).catch(() => {});
+  }, [ad?.id, ad?.isAuction]);
+
+  // Auction countdown timer
+  useEffect(() => {
+    if (!ad?.isAuction) return;
+
+    const tick = () => {
+      if (ad.auctionClosedAt) {
+        setAuctionEnded(true);
+        setCountdown('');
+        clearInterval(timerRef.current);
+        return;
+      }
+      if (!ad.auctionEndsAt) return;
+      const ms = new Date(ad.auctionEndsAt).getTime() - Date.now();
+      if (ms <= 0) {
+        setAuctionEnded(true);
+        setCountdown('');
+        setRemainingMs(0);
+        clearInterval(timerRef.current);
+      } else {
+        setAuctionEnded(false);
+        setCountdown(formatCountdown(ms));
+        setRemainingMs(ms);
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [ad?.isAuction, ad?.auctionEndsAt, ad?.auctionClosedAt]);
+
+  async function refreshReservationStatus() {
+    if (!user?.id || !ad) return;
+    try {
+      const ops = await api.wallets.getOperations(user.id);
       if (!ops) return;
       const title = opTitle(ad);
       const reserves = ops.filter(o => o.type === 'RESERVE' && o.title === title).length;
       const settled = ops.filter(o => (o.type === 'PAY' || o.type === 'CANCEL') && o.title === title).length;
       setReserved(reserves > settled);
-    }).catch(() => {});
-  }, [user?.id, ad?.id]);
+    } catch {}
+  }
 
   function handleContact() {
     if (!user?.id || !ad?.authorId) return;
@@ -59,6 +134,7 @@ export default function Listing() {
     navigate('/messages', { state: { pendingMemberId: ad.authorId } });
   }
 
+  // Regular purchase handlers
   async function handleReserve() {
     setBuyLoading('reserve'); setBuyError('');
     try {
@@ -72,7 +148,7 @@ export default function Listing() {
   async function handlePayOnly() {
     setReviewLoading('skip'); setReviewError('');
     try {
-      await api.wallets.pay(user.id, ad.authorId, ad.price, opTitle(ad));
+      await api.wallets.pay(user.id, ad.authorId, effectivePayAmount, opTitle(ad));
       const w = await api.wallets.get(user.id);
       setWallet(w); setReserved(false); setShowReviewModal(false);
     } catch (e) { setReviewError(e.message || 'Ошибка подтверждения'); }
@@ -82,7 +158,7 @@ export default function Listing() {
   async function handlePayWithReview(reviewData) {
     setReviewLoading('submit'); setReviewError('');
     try {
-      await api.wallets.pay(user.id, ad.authorId, ad.price, opTitle(ad));
+      await api.wallets.pay(user.id, ad.authorId, effectivePayAmount, opTitle(ad));
       const w = await api.wallets.get(user.id);
       setWallet(w); setReserved(false); setShowReviewModal(false);
     } catch (e) {
@@ -99,9 +175,7 @@ export default function Listing() {
         isAnonymous: reviewData.isAnonymous,
       }, user.id);
       setReviewKey(k => k + 1);
-    } catch (e) {
-      // payment already succeeded — review failure is non-blocking
-    }
+    } catch {}
     setReviewLoading('');
   }
 
@@ -113,6 +187,35 @@ export default function Listing() {
       setWallet(w); setReserved(false);
     } catch (e) { setBuyError(e.message || 'Ошибка отмены'); }
     setBuyLoading('');
+  }
+
+  // Auction handlers
+  async function handleBid() {
+    const amount = Number(bidInput);
+    if (!amount || amount <= 0) return setBidError('Введите корректную сумму');
+    setBidLoading(true); setBidError('');
+    try {
+      await api.auctions.placeBid(ad.id, user.id, amount);
+      const [newBids, w] = await Promise.all([
+        api.auctions.getBids(ad.id),
+        api.wallets.get(user.id),
+      ]);
+      setBids(newBids);
+      setWallet(w);
+      setBidInput('');
+      await refreshReservationStatus();
+    } catch (e) { setBidError(e.message || 'Ошибка'); }
+    setBidLoading(false);
+  }
+
+  async function handleCloseAuction() {
+    setCloseAuctionLoading(true);
+    try {
+      await api.auctions.close(ad.id, user.id);
+      const updated = await api.advertisements.getById(ad.id);
+      setAd(updated);
+    } catch (e) { setBidError(e.message || 'Ошибка при завершении аукциона'); }
+    setCloseAuctionLoading(false);
   }
 
   async function toggleFav() {
@@ -137,6 +240,8 @@ export default function Listing() {
 
   const photos = ad.photoUrls?.length > 0 ? [...ad.photoUrls] : [placeholder];
   const isOwn = user?.id === ad.authorId;
+  const minBid = topBid ? topBid.amount + 1 : (ad.price ?? 1);
+  const auctionActive = ad.isAuction && ad.status === 'ACTIVE' && !auctionEnded;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -151,7 +256,7 @@ export default function Listing() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24 }}>
-          {/* Left: photo + description */}
+          {/* Left: photo + description + bids */}
           <div>
             {/* Photos */}
             <div style={{
@@ -209,6 +314,59 @@ export default function Listing() {
               </p>
             </div>
 
+            {/* Auction bids table */}
+            {ad.isAuction && (
+              <div style={{ marginTop: 28 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>
+                  Ставки аукциона {bids.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400 }}>({bids.length})</span>}
+                </div>
+                {bids.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>
+                    Ставок пока нет. Начальная ставка: {ad.price?.toLocaleString('ru')} t
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}>#</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}>Участник</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}>Ставка</th>
+                          <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}>Время</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bids.map((bid, i) => (
+                          <tr
+                            key={bid.id}
+                            style={{
+                              borderBottom: i < bids.length - 1 ? '1px solid var(--border)' : 'none',
+                              background: bid.bidderId === user?.id ? 'oklch(0.97 0.02 260)' : 'transparent',
+                            }}
+                          >
+                            <td style={{ padding: '10px 12px', color: i === 0 ? 'var(--positive)' : 'var(--muted)', fontWeight: i === 0 ? 700 : 400 }}>
+                              {i === 0 ? '★' : `${i + 1}`}
+                            </td>
+                            <td style={{ padding: '10px 12px', fontWeight: bid.bidderId === user?.id ? 600 : 400 }}>
+                              {bid.bidderId === user?.id
+                                ? 'Вы'
+                                : `...${bid.bidderId.toString().slice(-8)}`}
+                            </td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: i === 0 ? 700 : 400, color: i === 0 ? 'var(--positive)' : 'var(--text)' }}>
+                              {bid.amount.toLocaleString('ru')} t
+                            </td>
+                            <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 11, color: 'var(--muted)' }}>
+                              {new Date(bid.createdAt).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Reviews */}
             <div style={{ marginTop: 28 }}>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Отзывы</div>
@@ -226,7 +384,7 @@ export default function Listing() {
               position: 'sticky',
               top: 70,
             }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 <span style={{
                   fontSize: 11,
                   fontWeight: 600,
@@ -240,13 +398,54 @@ export default function Listing() {
                 <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg)', padding: '2px 8px', borderRadius: 4 }}>
                   {ad.categoryDisplayName || ad.category}
                 </span>
+                {ad.isAuction && (
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'oklch(0.95 0.06 60)', color: 'oklch(0.5 0.15 60)', padding: '2px 8px', borderRadius: 4 }}>
+                    Аукцион
+                  </span>
+                )}
               </div>
 
               <h1 style={{ fontSize: 17, fontWeight: 700, lineHeight: 1.3, marginBottom: 14 }}>{ad.name}</h1>
 
-              <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
-                {ad.price != null ? `${ad.price.toLocaleString('ru')} t` : 'Бесплатно'}
-              </div>
+              {/* Price / bid display */}
+              {ad.isAuction ? (
+                <div style={{ marginBottom: 16 }}>
+                  {topBid ? (
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>Текущая ставка</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: 'var(--positive)' }}>
+                        {topBid.amount.toLocaleString('ru')} t
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>Начальная ставка</div>
+                      <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>
+                        {ad.price?.toLocaleString('ru')} t
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Countdown */}
+                  {!auctionEnded && ad.auctionEndsAt && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>До конца:</span>
+                      <span style={{ fontFamily: 'var(--mono)', color: remainingMs !== null && remainingMs < 3600000 ? 'var(--negative)' : 'var(--text)', fontWeight: 600 }}>
+                        {countdown || '...'}
+                      </span>
+                    </div>
+                  )}
+                  {auctionEnded && (
+                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>
+                      Аукцион завершён
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontFamily: 'var(--mono)', fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
+                  {ad.price != null ? `${ad.price.toLocaleString('ru')} t` : 'Бесплатно'}
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 {!isOwn && (
@@ -284,8 +483,8 @@ export default function Listing() {
                 </button>
               </div>
 
-              {/* Payment block */}
-              {!isOwn && ad.status === 'ACTIVE' && ad.price > 0 && (
+              {/* Regular purchase block (non-auction) */}
+              {!ad.isAuction && !isOwn && ad.status === 'ACTIVE' && ad.price > 0 && (
                 <div style={{ marginBottom: 16 }}>
                   {buyError && (
                     <div style={{ fontSize: 12, color: 'var(--negative)', marginBottom: 8, padding: '6px 10px', background: 'oklch(0.95 0.04 25)', borderRadius: 'var(--radius-sm)' }}>
@@ -318,6 +517,128 @@ export default function Listing() {
                       >
                         {buyLoading === 'cancel' ? '...' : 'Отменить резерв'}
                       </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Auction block */}
+              {ad.isAuction && ad.status === 'ACTIVE' && (
+                <div style={{ marginBottom: 16 }}>
+                  {bidError && (
+                    <div style={{ fontSize: 12, color: 'var(--negative)', marginBottom: 8, padding: '6px 10px', background: 'oklch(0.95 0.04 25)', borderRadius: 'var(--radius-sm)' }}>
+                      {bidError}
+                    </div>
+                  )}
+
+                  {/* Bid input for non-owners while active */}
+                  {!isOwn && auctionActive && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        Минимальная ставка: <strong>{minBid.toLocaleString('ru')} t</strong>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input
+                          type="number"
+                          value={bidInput}
+                          onChange={e => { setBidInput(e.target.value); setBidError(''); }}
+                          placeholder={`≥ ${minBid}`}
+                          min={minBid}
+                          style={{
+                            flex: 1,
+                            padding: '8px 10px',
+                            fontSize: 13,
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'var(--surface)',
+                            color: 'var(--text)',
+                            outline: 'none',
+                          }}
+                          onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                          onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                          onKeyDown={e => e.key === 'Enter' && handleBid()}
+                        />
+                        <button
+                          onClick={handleBid}
+                          disabled={bidLoading}
+                          style={{
+                            padding: '8px 14px',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            background: bidLoading ? 'var(--border)' : 'var(--positive)',
+                            color: bidLoading ? 'var(--muted)' : '#fff',
+                            border: 'none',
+                            borderRadius: 'var(--radius-sm)',
+                            cursor: bidLoading ? 'not-allowed' : 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {bidLoading ? '...' : 'Ставка'}
+                        </button>
+                      </div>
+                      {wallet && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          Ваш баланс: {wallet.availableTokens?.toLocaleString('ru')} t
+                        </div>
+                      )}
+                      {topBid?.bidderId === user?.id && (
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--positive)', padding: '6px 10px', background: 'oklch(0.96 0.04 145)', borderRadius: 'var(--radius-sm)' }}>
+                          Вы лидируете! Ставка: {topBid.amount.toLocaleString('ru')} t
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Close auction button for owner */}
+                  {isOwn && auctionActive && (
+                    <button
+                      onClick={handleCloseAuction}
+                      disabled={closeAuctionLoading}
+                      style={{
+                        width: '100%',
+                        padding: '10px 0',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        background: closeAuctionLoading ? 'var(--border)' : 'var(--surface)',
+                        color: closeAuctionLoading ? 'var(--muted)' : 'var(--negative)',
+                        border: '1px solid var(--negative)',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: closeAuctionLoading ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {closeAuctionLoading ? '...' : 'Завершить аукцион'}
+                    </button>
+                  )}
+
+                  {/* Winner confirmation after auction ended */}
+                  {auctionEnded && isAuctionWinner && reserved && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--positive)', padding: '8px 10px', background: 'oklch(0.96 0.04 145)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+                        Вы победили в аукционе!
+                        <div style={{ fontWeight: 400, marginTop: 2 }}>
+                          Зарезервировано: {topBid?.amount?.toLocaleString('ru')} t
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { setReviewError(''); setShowReviewModal(true); }}
+                        style={{ width: '100%', padding: '9px 0', fontSize: 13, fontWeight: 600, background: 'var(--positive)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                      >
+                        Получил товар — подтвердить оплату
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Auction ended but user is not the winner */}
+                  {auctionEnded && !isOwn && !isAuctionWinner && bids.length > 0 && (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0', textAlign: 'center' }}>
+                      Победитель определён. Ваша ставка не выиграла.
+                    </div>
+                  )}
+
+                  {/* Auction ended with no bids */}
+                  {auctionEnded && bids.length === 0 && !isOwn && (
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0', textAlign: 'center' }}>
+                      Аукцион завершён без ставок.
                     </div>
                   )}
                 </div>

@@ -39,6 +39,9 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
     name: '',
     description: '',
     price: '',
+    isAuction: false,
+    startingBid: '',
+    auctionEndsAt: '',
   });
 
   useEffect(() => {
@@ -103,25 +106,34 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
   }
 
   function handleChange(e) {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value, type, checked } = e.target;
+    setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     setError('');
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.category) return setError('Выберите категорию');
+    if (form.isAuction && !form.startingBid) return setError('Укажите начальную ставку');
+    if (form.isAuction && !form.auctionEndsAt) return setError('Укажите дату окончания аукциона');
     setLoading(true);
     try {
       await api.advertisements.create({
         name: form.name,
         description: form.description,
-        price: form.price && Number(form.price) > 0 ? Number(form.price) : null,
+        price: form.isAuction
+          ? (Number(form.startingBid) > 0 ? Number(form.startingBid) : null)
+          : (form.price && Number(form.price) > 0 ? Number(form.price) : null),
         type: form.type,
         category: form.category,
         authorId: user?.id,
         photoUrls,
+        isAuction: form.isAuction,
+        auctionEndsAt: form.isAuction && form.auctionEndsAt
+          ? new Date(form.auctionEndsAt).toISOString()
+          : null,
       });
-      setForm({ type: 'OBJECTS', group: '', category: '', name: '', description: '', price: '' });
+      setForm({ type: 'OBJECTS', group: '', category: '', name: '', description: '', price: '', isAuction: false, startingBid: '', auctionEndsAt: '' });
       onSuccess?.();
       setCreated(true);
     } catch (err) {
@@ -234,20 +246,89 @@ export default function CreateAdModal({ isOpen, onClose, onSuccess }) {
             />
           </div>
 
-          <div>
-            <label style={labelStyle}>Цена (в токенах)</label>
-            <input
-              type="number"
-              name="price"
-              value={form.price}
-              onChange={handleChange}
-              placeholder="Оставьте пустым для бесплатно"
-              min="0"
-              style={inputStyle}
-              onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
-              onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-            />
+          {/* Auction toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: form.isAuction ? 'oklch(0.96 0.03 260)' : 'var(--bg)', border: `1px solid ${form.isAuction ? 'var(--accent-border)' : 'var(--border)'}`, borderRadius: 'var(--radius-sm)' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: form.isAuction ? 'var(--accent)' : 'var(--text)' }}>Аукцион</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>Покупатели соревнуются ставками</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setForm(p => ({ ...p, isAuction: !p.isAuction }))}
+              style={{
+                width: 40,
+                height: 22,
+                borderRadius: 11,
+                border: 'none',
+                cursor: 'pointer',
+                background: form.isAuction ? 'var(--accent)' : 'var(--border)',
+                position: 'relative',
+                transition: 'background 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute',
+                top: 3,
+                left: form.isAuction ? 21 : 3,
+                width: 16,
+                height: 16,
+                borderRadius: '50%',
+                background: '#fff',
+                transition: 'left 0.2s',
+              }} />
+            </button>
           </div>
+
+          {/* Price OR Auction fields */}
+          {!form.isAuction ? (
+            <div>
+              <label style={labelStyle}>Цена (в токенах)</label>
+              <input
+                type="number"
+                name="price"
+                value={form.price}
+                onChange={handleChange}
+                placeholder="Оставьте пустым для бесплатно"
+                min="0"
+                style={inputStyle}
+                onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label style={labelStyle}>Начальная ставка (токены) *</label>
+                <input
+                  type="number"
+                  name="startingBid"
+                  value={form.startingBid}
+                  onChange={handleChange}
+                  placeholder="Минимальная ставка"
+                  min="1"
+                  required={form.isAuction}
+                  style={inputStyle}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Конец аукциона *</label>
+                <input
+                  type="datetime-local"
+                  name="auctionEndsAt"
+                  value={form.auctionEndsAt}
+                  onChange={handleChange}
+                  required={form.isAuction}
+                  min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+                  style={inputStyle}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label style={labelStyle}>Описание *</label>

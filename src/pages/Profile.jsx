@@ -16,7 +16,11 @@ const inputStyle = {
 
 export default function Profile() {
   const { user, login } = useAuth();
-  const [form, setForm] = useState({ login: user?.login || '', email: user?.email || '' });
+  const [form, setForm] = useState({
+    login: user?.login || '',
+    email: user?.email || '',
+    telegramUsername: user?.telegramUsername || '',
+  });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
@@ -28,7 +32,13 @@ export default function Profile() {
     setError('');
     setSuccess('');
     try {
-      const updated = await api.users.update(user.id, { login: form.login, email: form.email });
+      const tg = form.telegramUsername.trim().replace(/^@/, '').toLowerCase() || null;
+      const updated = await api.users.update(user.id, {
+        ...user,
+        login: form.login,
+        email: form.email,
+        telegramUsername: tg || undefined,
+      });
       login(localStorage.getItem('token'), { ...user, ...updated });
       setSuccess('Профиль обновлён');
     } catch (err) {
@@ -112,6 +122,30 @@ export default function Profile() {
               />
             </div>
 
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, display: 'block' }}>
+                Telegram (необязательно)
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{
+                  position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                  color: 'var(--muted)', fontSize: 13, pointerEvents: 'none', userSelect: 'none',
+                }}>@</span>
+                <input
+                  type="text"
+                  value={form.telegramUsername}
+                  onChange={e => setForm(p => ({ ...p, telegramUsername: e.target.value.replace(/^@/, '') }))}
+                  placeholder="username"
+                  style={{ ...inputStyle, paddingLeft: 22 }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
+                Используется для получения уведомлений в Telegram
+              </div>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -149,6 +183,37 @@ export default function Profile() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Telegram bot instructions */}
+        <div style={{ marginTop: 16, padding: 16, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <span style={{ fontSize: 18 }}>✈️</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Telegram-уведомления
+            </span>
+          </div>
+          {user?.telegramUsername ? (
+            <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+              <div style={{ marginBottom: 8 }}>
+                Ваш Telegram:{' '}
+                <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>@{user.telegramUsername}</span>
+              </div>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>
+                Чтобы активировать уведомления:
+              </div>
+              <ol style={{ margin: '6px 0 0 16px', padding: 0, fontSize: 12, color: 'var(--muted)', lineHeight: 2 }}>
+                <li>Откройте бота: <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>@portal_mipt_bot</span></li>
+                <li>Отправьте <span style={{ fontFamily: 'var(--mono)' }}>/start</span> — бот вас узнает</li>
+                <li>Введите <span style={{ fontFamily: 'var(--mono)' }}>/login</span> и подтвердите логин и пароль</li>
+              </ol>
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--muted)', lineHeight: 1.6 }}>
+              Укажите ваш Telegram-юзернейм в поле выше, чтобы получать уведомления через бота{' '}
+              <span style={{ fontFamily: 'var(--mono)', color: 'var(--accent)' }}>@portal_mipt_bot</span>.
+            </div>
+          )}
         </div>
       </main>
     </div>

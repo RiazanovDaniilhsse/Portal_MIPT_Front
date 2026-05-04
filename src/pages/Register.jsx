@@ -15,7 +15,7 @@ const inputStyle = {
 
 export default function Register() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ login: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ login: '', email: '', password: '', confirm: '', telegramUsername: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -35,7 +35,8 @@ export default function Register() {
 
     setLoading(true);
     try {
-      await api.users.register({ login: form.login, email, password: form.password });
+      const tg = form.telegramUsername.trim().replace(/^@/, '').toLowerCase() || undefined;
+      await api.users.register({ login: form.login, email, password: form.password, telegramUsername: tg });
       navigate(`/activation-pending?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setError(err.message || 'Ошибка регистрации. Проверьте данные.');
@@ -94,7 +95,7 @@ export default function Register() {
 
             {[
               { name: 'login', label: 'Логин', type: 'text', placeholder: 'Минимум 3 символа' },
-              { name: 'email', label: 'Email', type: 'email', placeholder: 'user@example.com' },
+              { name: 'email', label: 'Email', type: 'email', placeholder: 'user@phystech.edu' },
               { name: 'password', label: 'Пароль', type: 'password', placeholder: 'Минимум 6 символов' },
               { name: 'confirm', label: 'Повторите пароль', type: 'password', placeholder: '••••••••' },
             ].map(field => (
@@ -115,6 +116,32 @@ export default function Register() {
                 />
               </div>
             ))}
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, marginBottom: 5, display: 'block' }}>
+                Telegram{' '}
+                <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— необязательно</span>
+              </label>
+              <div style={{ position: 'relative' }}>
+                <span style={{
+                  position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                  color: 'var(--muted)', fontSize: 14, pointerEvents: 'none',
+                }}>@</span>
+                <input
+                  type="text"
+                  name="telegramUsername"
+                  value={form.telegramUsername}
+                  onChange={e => setForm(p => ({ ...p, telegramUsername: e.target.value.replace(/^@/, '') }))}
+                  placeholder="username"
+                  style={{ ...inputStyle, paddingLeft: 22 }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--border)')}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                Для уведомлений через @portal_mipt_bot
+              </div>
+            </div>
 
             <button
               type="submit"

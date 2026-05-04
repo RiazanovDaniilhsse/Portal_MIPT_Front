@@ -1,16 +1,46 @@
-# React + Vite
+ # Portal MIPT — фронтенд
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Фронтенд на React + Vite для `Portal MIPT`.
 
-Currently, two official plugins are available:
+## Возможности
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Просмотр ленты и каталога объявлений.
+- Просмотр карточки объявления: фотографии, информация о продавце, отзывы, чат и оплата через кошелёк.
+- Создание и редактирование объявлений, включая режим аукциона.
+- Поиск по тексту, типу и категории.
+- Управление избранным, сделками, сообщениями, профилем и операциями кошелька.
+- Регистрация, вход и подтверждение аккаунта.
+- Подключение Telegram-имени для уведомлений бота.
 
-## React Compiler
+## Недавние изменения
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Поддержка аукционов: ставки, таймеры и закрытие аукциона на странице объявления.
+- Поток отзывов после покупки.
+- Онбординг Telegram в профиле и при регистрации.
+- Возможность начать чат прямо из карточки объявления.
 
-## Expanding the ESLint configuration
+## Запуск локально
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install
+npm run dev
+```
+
+Dev-сервер работает на порту 3000 и проксирует `/api` на `http://localhost:8080`.
+
+## Сборка
+
+```bash
+npm run build
+npm run lint
+```
+
+Production-сборка по умолчанию копируется в статические ресурсы Spring-приложения, поэтому SPA может раздаваться с того же бэкенда.
+
+## Важные файлы
+
+- `src/App.jsx`
+- `src/api/client.js`
+- `src/context/AuthContext.jsx`
+- `src/pages/`
+- `src/components/`
